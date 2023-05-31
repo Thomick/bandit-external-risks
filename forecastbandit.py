@@ -89,7 +89,7 @@ class ForecastUCB1(ForecastBanditAlgorithm):
             + 0.3
             * np.sqrt(
                 2
-                * np.log(1 + self.t * np.log(self.t + 1) ** 2)
+                * np.log(100)
                 * (
                     (1 - p) ** 2 / np.maximum(self.normal_pull_count, 1)
                     + p**2 / np.maximum(self.pull_count - self.normal_pull_count, 1)
@@ -154,10 +154,12 @@ class ForecastBanditExperiment(Experiment):
     def plot_smallest_gap(self, bandit_class, bandit_args, T):
         bandit = bandit_class(**bandit_args)
         print()
-        plt.plot([bandit.get_smallest_gap(p) for p in np.linspace(0, 1)])
+        plt.plot(
+            np.linspace(0, 1), [bandit.get_smallest_gap(p) for p in np.linspace(0, 1)]
+        )
         plt.title("Smallest gap as a function of p")
-        plt.set_xlabel("p")
-        plt.set_ylabel("Smallest optimality gap")
+        plt.xlabel("p")
+        plt.ylabel("Smallest optimality gap")
         plt.figure()
         plt.errorbar(
             range(bandit.nb_arm),

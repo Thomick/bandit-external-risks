@@ -13,13 +13,13 @@ sigmas = np.ones(nb_arm)
 epsilon = 0.1
 
 # Experiment parameters
-T = 100000
+T = 10000
 nb_simu = 10
 
 # Toggle experiments
-plot_bernoulli = False
-plot_gaussian = False
-print_ratio_pull = False
+plot_bernoulli = True
+plot_gaussian = True
+print_ratio_pull = True
 plot_smallest_gap = True
 
 # Set plot style
@@ -36,7 +36,15 @@ experiment.add_learner(ForecastUCB1, name="Forecast UCB1")
     ForecastBernoulliThompsonSampling, name="Forecast Thompson Sampling"
 )"""
 
+# plot smallest gaps
+if plot_smallest_gap:
+    print("Smallest gaps")
+    experiment.plot_smallest_gap(
+        ForecastBandit(BernoulliBandit), {"nb_arm": nb_arm, "mu": mu, "lmbd": lmbd}, T
+    )
+
 if plot_bernoulli:
+    print("Bernoulli bandit")
     experiment.run_and_plot(
         ForecastBandit(BernoulliBandit),
         {"nb_arm": nb_arm, "mu": mu, "lmbd": lmbd},
@@ -46,6 +54,7 @@ if plot_bernoulli:
     )
 
 if plot_gaussian:
+    print("Gaussian bandit")
     experiment.run_and_plot(
         ForecastBandit(GaussianBandit),
         {"nb_arm": nb_arm, "mu": mu, "lmbd": lmbd, "bandit_args": {"sigmas": sigmas}},
@@ -55,12 +64,7 @@ if plot_gaussian:
     )
 
 if print_ratio_pull:
+    print("Ratio pull without event")
     experiment.plot_ratio_pull(
-        ForecastBandit(BernoulliBandit), {"nb_arm": nb_arm, "mu": mu, "lmbd": lmbd}, T
-    )
-
-# plot smallest gaps
-if plot_smallest_gap:
-    experiment.plot_smallest_gap(
         ForecastBandit(BernoulliBandit), {"nb_arm": nb_arm, "mu": mu, "lmbd": lmbd}, T
     )
