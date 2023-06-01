@@ -1,5 +1,8 @@
 from forecastbandit import *
 
+# set seed for numpy
+np.random.seed(1)
+
 # Bandit parameters
 nb_arm = 10
 range_means = [0, 1]

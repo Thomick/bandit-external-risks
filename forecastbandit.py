@@ -89,7 +89,7 @@ class ForecastUCB1(ForecastBanditAlgorithm):
             + 0.3
             * np.sqrt(
                 2
-                * np.log(100)
+                * np.log(1 + self.t * np.log(self.t + 1) ** 2)
                 * (
                     (1 - p) ** 2 / np.maximum(self.normal_pull_count, 1)
                     + p**2 / np.maximum(self.pull_count - self.normal_pull_count, 1)
