@@ -33,6 +33,24 @@ def ForecastBandit(bandit_class):
     return ForecastBandit
 
 
+def FBFixedPSequence(bandit_class, p_sequence=None):
+    if p_sequence is None:
+        return ForecastBandit(bandit_class)
+
+    class FBFixedSequence(ForecastBandit(bandit_class)):
+        def __init__(self, nb_arm, mu=None, lmbd=None, bandit_args={}):
+            super().__init__(nb_arm, mu, lmbd, bandit_args)
+            self.p_sequence = p_sequence
+            self.t = 0
+
+        def get_next_p(self):
+            next_p = self.p_sequence[self.t % len(self.p_sequence)]
+            self.t = (self.t + 1) % len(self.p_sequence)
+            return next_p
+
+    return FBFixedSequence
+
+
 # Parent class for bandit algorithms with forecasts
 class ForecastBanditAlgorithm(BanditAlgorithm):
     name = "ForecastBanditAlgorithm"

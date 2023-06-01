@@ -1,7 +1,7 @@
 from forecastbandit import *
 
 # set seed for numpy
-np.random.seed(1)
+np.random.seed(1)  # try 1, 0
 
 # Bandit parameters
 nb_arm = 10
@@ -11,6 +11,9 @@ mu = np.sort(
 )
 lmbd = np.random.rand(nb_arm) * mu
 sigmas = np.ones(nb_arm)
+
+# p_sequence = np.linspace(0.1, 0.9, 10000)
+p_sequence = None
 
 # Algorithm parameters
 epsilon = 0.1
@@ -43,13 +46,15 @@ experiment.add_learner(ForecastUCB1, name="Forecast UCB1")
 if plot_smallest_gap:
     print("Smallest gaps")
     experiment.plot_smallest_gap(
-        ForecastBandit(BernoulliBandit), {"nb_arm": nb_arm, "mu": mu, "lmbd": lmbd}, T
+        FBFixedPSequence(BernoulliBandit, p_sequence),
+        {"nb_arm": nb_arm, "mu": mu, "lmbd": lmbd},
+        T,
     )
 
 if plot_bernoulli:
     print("Bernoulli bandit")
     experiment.run_and_plot(
-        ForecastBandit(BernoulliBandit),
+        FBFixedPSequence(BernoulliBandit, p_sequence),
         {"nb_arm": nb_arm, "mu": mu, "lmbd": lmbd},
         T,
         nb_simu,
@@ -59,7 +64,7 @@ if plot_bernoulli:
 if plot_gaussian:
     print("Gaussian bandit")
     experiment.run_and_plot(
-        ForecastBandit(GaussianBandit),
+        FBFixedPSequence(GaussianBandit, p_sequence),
         {"nb_arm": nb_arm, "mu": mu, "lmbd": lmbd, "bandit_args": {"sigmas": sigmas}},
         T,
         nb_simu,
@@ -69,5 +74,7 @@ if plot_gaussian:
 if print_ratio_pull:
     print("Ratio pull without event")
     experiment.plot_ratio_pull(
-        ForecastBandit(BernoulliBandit), {"nb_arm": nb_arm, "mu": mu, "lmbd": lmbd}, T
+        FBFixedPSequence(BernoulliBandit, p_sequence),
+        {"nb_arm": nb_arm, "mu": mu, "lmbd": lmbd},
+        T,
     )
