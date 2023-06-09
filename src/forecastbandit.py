@@ -93,6 +93,9 @@ class ForecastBanditAlgorithm(BanditAlgorithm):
             self.pull_count - self.normal_pull_count, 1
         )
 
+    def _compute_global_empirical_means(self):
+        return self.total_rewards / np.maximum(self.pull_count, 1)
+
 
 # UCB1 algorithm with forecasts
 class ForecastUCB1(ForecastBanditAlgorithm):
@@ -104,8 +107,7 @@ class ForecastUCB1(ForecastBanditAlgorithm):
     def select(self, p):
         return np.argmax(
             self._compute_empirical_means(p)
-            + 0.3
-            * np.sqrt(
+            + np.sqrt(
                 2
                 * np.log(1 + self.t * np.log(self.t + 1) ** 2)
                 * (
@@ -128,6 +130,26 @@ class ForecastEpsilonGreedy(ForecastBanditAlgorithm):
             return np.random.randint(self.nb_arm)
         else:
             return np.argmax(self._compute_empirical_means(p))
+
+
+class UCB1(ForecastBanditAlgorithm):
+    name = "UCB1"
+
+    def __init__(self, bandit):
+        super().__init__(bandit)
+
+    def select(self, p):
+        for arm in range(self.nb_arm):
+            if self.pull_count[arm] == 0:
+                return arm
+        return np.argmax(
+            self._compute_global_empirical_means()
+            + np.sqrt(
+                2
+                * np.log(1 + self.t * np.log(self.t + 1) ** 2)
+                / np.maximum(self.pull_count, 1)
+            )
+        )
 
 
 # Thompson sampling algorithm for Bernoulli bandits
@@ -173,7 +195,8 @@ class ForecastBanditExperiment(Experiment):
         bandit = bandit_class(**bandit_args)
         print()
         plt.plot(
-            np.linspace(0, 1), [bandit.get_smallest_gap(p) for p in np.linspace(0, 1)]
+            np.linspace(0, 1, 200),
+            [bandit.get_smallest_gap(p) for p in np.linspace(0, 1, 200)],
         )
         plt.title("Smallest gap as a function of p")
         plt.xlabel("p")
