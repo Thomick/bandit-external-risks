@@ -210,3 +210,31 @@ class ForecastBanditExperiment(Experiment):
         )
         plt.title("Arm intervals")
         plt.show()
+
+
+# UCB1 algorithm with forecasts
+class ForecastUCB1Approx(ForecastBanditAlgorithm):
+    name = "ForecastUCB1"
+
+    def __init__(self, bandit):
+        super().__init__(bandit)
+        self.event_count = 0
+
+    def select(self,p):
+        p_estimated = self.event_count / (self.t+1)
+        return np.argmax(
+            self._compute_empirical_means(p_estimated)
+            + np.sqrt(
+                2
+                * np.log(1 + self.t * np.log(self.t + 1) ** 2)
+                * (
+                    (1 - p_estimated) ** 2 / np.maximum(self.normal_pull_count, 1)
+                    + p_estimated**2 / np.maximum(self.pull_count - self.normal_pull_count, 1)
+                )
+            )
+        )
+    
+    def _update(self, arm, reward, event):
+        super()._update(arm, reward, event)
+        if event:
+            self.event_count += 1
