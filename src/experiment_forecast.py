@@ -5,15 +5,15 @@ np.random.seed(1)  # try 1, 0
 
 # Bandit parameters
 nb_arm = 10
-range_means = [0, 1]
+range_means = [0, 20]
 mu = np.sort(
     np.random.rand(nb_arm) * (range_means[1] - range_means[0]) + range_means[0]
 )
 lmbd = np.random.rand(nb_arm) * mu
 sigmas = np.ones(nb_arm)
 
-#mu = np.array([1, 0.75])
-#lmbd = np.array([0, 0.25])
+# mu = np.array([1, 0.75])
+# lmbd = np.array([0, 0.25])
 
 
 # Algorithm parameters
@@ -21,20 +21,20 @@ epsilon = 0.1
 
 # Experiment parameters
 T = 10000
-nb_simu = 10
+nb_simu = 20
 
 
 p_sequence = None
 p_sequence = np.linspace(0.1, 0.9, 1000)
 # p_sequence = np.array([0.5 + 1 / np.sqrt(i + 1) for i in range(1, T + 1)])
 # p_sequence = np.array([0.25, 0.75])
-p_sequence = np.array([0.5])
+# p_sequence = np.array([0.5])
 
 
 # Toggle experiments
-plot_bernoulli = True
+plot_bernoulli = False
 plot_gaussian = True
-print_ratio_pull = True
+print_ratio_pull = False
 plot_smallest_gap = True
 
 # Set plot style
@@ -49,7 +49,10 @@ experiment.add_learner(
 experiment.add_learner(ForecastUCB1, name="Forecast UCB1")
 experiment.add_learner(UCB1, name="UCB1")
 
-experiment.add_learner(ForecastUCB1Approx, name="Forecast UCB1 with probability estimation")
+experiment.add_learner(
+    ForecastUCB1Approx, name="Forecast UCB1 with probability estimation"
+)
+experiment.add_learner(OptimalAgent, name="Optimal Agent")
 """experiment.add_learner(
     ForecastBernoulliThompsonSampling, name="Forecast Thompson Sampling"
 )"""
