@@ -14,7 +14,7 @@ def ForecastBandit(bandit_class):
         def pull(self, arm):
             current_p = self.p
             self.p = self.get_next_p()
-            if np.random.rand() < current_p:
+            if np.random.rand() < 1 - current_p:
                 return self.normal_bandit.pull(arm), False
             else:
                 return self.hazard_bandit.pull(arm), True
@@ -61,6 +61,7 @@ class ForecastBanditAlgorithm(BanditAlgorithm):
         self.total_rewards_normal = np.zeros(self.nb_arm)
         self.observed_p = []
         self.smallest_gap = []
+        self.estimation_error = []
 
     def _update(self, arm, reward, event):
         super()._update(arm, reward)
@@ -71,7 +72,10 @@ class ForecastBanditAlgorithm(BanditAlgorithm):
     def run(self, T):
         for t in range(T):
             current_p = self.bandit.p
-            arm = self.select(current_p)
+            arm, empirical_means = self.select(current_p)
+            self.estimation_error.append(
+                np.sum(np.abs(empirical_means - self.bandit.get_means(current_p)))
+            )
             self.observed_p.append(current_p)
             self.regrets.append(self._compute_regret(arm, current_p))
             self.smallest_gap.append(self.bandit.get_smallest_gap(current_p))
@@ -84,7 +88,7 @@ class ForecastBanditAlgorithm(BanditAlgorithm):
 
     def _compute_regret(self, arm, p):
         means = self.bandit.get_means(p)
-        return means.max() - means[arm]
+        return means.max() - means[arm] > 0
 
     def _compute_empirical_means(self, p):
         return (1 - p) * self.total_rewards_normal / np.maximum(
@@ -105,17 +109,24 @@ class ForecastUCB1(ForecastBanditAlgorithm):
         super().__init__(bandit)
 
     def select(self, p):
-        return np.argmax(
-            self._compute_empirical_means(p)
-            + np.sqrt(
-                2
-                * np.log(1 + self.t * np.log(self.t + 1) ** 2)
-                * (
-                    (1 - p) ** 2 / np.maximum(self.normal_pull_count, (1 - p) ** 3)
-                    + p**2
-                    / np.maximum(self.pull_count - self.normal_pull_count, p**3)
+        empirical_means = self._compute_empirical_means(p)
+        if self.normal_pull_count.min() == 0:
+            return np.argmin(self.normal_pull_count), empirical_means
+        elif (self.pull_count - self.normal_pull_count).min() == 0:
+            return np.argmin(self.pull_count - self.normal_pull_count), empirical_means
+        return (
+            np.argmax(
+                empirical_means
+                + np.sqrt(
+                    2
+                    * np.log(1 + self.t * np.log(self.t + 1) ** 2)
+                    * (
+                        (1 - p) ** 2 / self.normal_pull_count
+                        + p**2 / (self.pull_count - self.normal_pull_count)
+                    )
                 )
-            )
+            ),
+            empirical_means,
         )
 
 
@@ -127,10 +138,11 @@ class ForecastEpsilonGreedy(ForecastBanditAlgorithm):
         self.epsilon = epsilon
 
     def select(self, p):
+        empirical_means = self._compute_empirical_means(p)
         if np.random.rand() < self.epsilon:
-            return np.random.randint(self.nb_arm)
+            return np.random.randint(self.nb_arm), empirical_means
         else:
-            return np.argmax(self._compute_empirical_means(p))
+            return np.argmax(empirical_means), empirical_means
 
 
 class UCB1(ForecastBanditAlgorithm):
@@ -140,16 +152,20 @@ class UCB1(ForecastBanditAlgorithm):
         super().__init__(bandit)
 
     def select(self, p):
+        empirical_means = self._compute_global_empirical_means()
         for arm in range(self.nb_arm):
             if self.pull_count[arm] == 0:
-                return arm
-        return np.argmax(
-            self._compute_global_empirical_means()
-            + np.sqrt(
-                2
-                * np.log(1 + self.t * np.log(self.t + 1) ** 2)
-                / np.maximum(self.pull_count, 1)
-            )
+                return arm, empirical_means
+        return (
+            np.argmax(
+                empirical_means
+                + np.sqrt(
+                    2
+                    * np.log(1 + self.t * np.log(self.t + 1) ** 2)
+                    / np.maximum(self.pull_count, 1)
+                )
+            ),
+            empirical_means,
         )
 
 
@@ -194,14 +210,16 @@ class ForecastBanditExperiment(Experiment):
 
     def plot_smallest_gap(self, bandit_class, bandit_args, T):
         bandit = bandit_class(**bandit_args)
-        print()
         plt.plot(
             np.linspace(0, 1, 200),
             [bandit.get_smallest_gap(p) for p in np.linspace(0, 1, 200)],
         )
-        plt.title("Smallest gap as a function of p")
-        plt.xlabel("p")
-        plt.ylabel("Smallest optimality gap")
+        print(np.argmax(bandit.get_means(0.0)))
+        print(np.argmax(bandit.get_means(0.5)))
+        print(np.argmax(bandit.get_means(1.0)))
+        plt.title("Smallest gap as a function of $p$")
+        plt.xlabel("$p$")
+        plt.ylabel("Smallest gap")
         plt.figure()
         plt.errorbar(
             range(bandit.nb_arm),
@@ -210,11 +228,27 @@ class ForecastBanditExperiment(Experiment):
             linestyle="None",
         )
         plt.title("Arm intervals")
+        plt.xticks(range(bandit.nb_arm), [str(i) for i in range(1, bandit.nb_arm + 1)])
+        plt.xlabel("Arm")
+        plt.ylabel("Mean reward interval")
+        plt.show()
+
+    def plot_estimation_error(self, bandit_class, bandit_args, T):
+        plt.figure()
+        for algorithm_class, algorithm_args, name in self.learners:
+            bandit = bandit_class(**bandit_args)
+            algorithm = algorithm_class(bandit, **algorithm_args)
+            _ = algorithm.run(T)
+            plt.plot(np.cumsum(algorithm.estimation_error), label=name)
+        plt.legend()
+        plt.title("Estimation error")
+        plt.xlabel("Time")
+        plt.ylabel("Estimation error")
         plt.show()
 
 
 # UCB1 algorithm with forecasts
-class ForecastUCB1Approx(ForecastBanditAlgorithm):
+class ForecastUCB1Approx(ForecastUCB1):
     name = "ForecastUCB1"
 
     def __init__(self, bandit):
@@ -223,22 +257,7 @@ class ForecastUCB1Approx(ForecastBanditAlgorithm):
 
     def select(self, p):
         p_estimated = self.event_count / (self.t + 1)
-        return np.argmax(
-            self._compute_empirical_means(p_estimated)
-            + np.sqrt(
-                2
-                * np.log(1 + self.t * np.log(self.t + 1) ** 2)
-                * (
-                    (1 - p_estimated) ** 2
-                    / np.maximum(self.normal_pull_count, (1 - p_estimated - 0.01) ** 3)
-                    + p_estimated**2
-                    / np.maximum(
-                        self.pull_count - self.normal_pull_count,
-                        (p_estimated + 0.01) ** 3,
-                    )
-                )
-            )
-        )
+        return super().select(p_estimated)
 
     def _update(self, arm, reward, event):
         super()._update(arm, reward, event)
@@ -253,4 +272,4 @@ class OptimalAgent(ForecastBanditAlgorithm):
         super().__init__(bandit)
 
     def select(self, p):
-        return np.argmax(self.bandit.get_means(p))
+        return np.argmax(self.bandit.get_means(p)), self.bandit.get_means(p)

@@ -3,6 +3,8 @@ import sys
 import matplotlib.pyplot as plt
 import seaborn as sns
 from joblib import Parallel, delayed
+import itertools
+import pandas as pd
 
 
 # Simple CLI progressbar that do not need a particular library
@@ -20,6 +22,21 @@ def progressbar(it, prefix="", size=60, file=sys.stdout):
         show(i + 1)
     file.write("\n")
     file.flush()
+
+
+def set_plot_line_style():
+    linestyles = [
+        "solid",
+        "dotted",
+        "dashed",
+        "dashdot",
+        (0, (3, 1, 1, 1, 1, 1)),
+        (5, (10, 3)),
+        (0, (3, 1, 1, 1)),
+    ]
+    ax = plt.gca()
+    for l, ls in zip(ax.lines, itertools.cycle(linestyles)):
+        l.set_linestyle(ls)
 
 
 # Parent class for bandits
@@ -209,7 +226,12 @@ class Experiment:
             regrets, self.learners
         ):
             self.add_cumulative_plot(regrets_algo, T, name)
-        self.show_regret_plots(show=False)
+
+        set_plot_line_style()
+        plt.legend()
+        plt.xlabel("Time")
+        plt.ylabel("Cumulative regret")
+        plt.title("Comparison of algorithms for bandits with external risks")
 
         if plot_instant_regret:
             plt.figure()
@@ -217,19 +239,22 @@ class Experiment:
                 regrets, self.learners
             ):
                 self.add_instant_plot(regrets_algo, T, name)
-            self.show_regret_plots(show=False)
+            plt.legend()
+            plt.xlabel("Time")
+            plt.ylabel("Regret")
 
         plt.show()
 
     def add_cumulative_plot(self, regrets, T, name=None):
-        plt.plot(np.arange(T), np.cumsum(regrets.mean(axis=0)), label=name)
+        cumregret = np.cumsum(regrets, axis=1)
+        plt.plot(np.arange(T), cumregret.mean(axis=0), label=name)
+        se = np.std(cumregret, axis=0) / np.sqrt(cumregret.shape[0])
+        plt.fill_between(
+            np.arange(T),
+            cumregret.mean(axis=0) - se,
+            cumregret.mean(axis=0) + se,
+            alpha=0.3,
+        )
 
     def add_instant_plot(self, regrets, T, name=None):
         plt.plot(np.arange(T), regrets.mean(axis=0), label=name)
-
-    def show_regret_plots(self, show=True):
-        plt.legend()
-        plt.xlabel("Time")
-        plt.ylabel("Regret")
-        if show:
-            plt.show()
