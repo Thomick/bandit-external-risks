@@ -1,4 +1,8 @@
 from bandit import *
+import numpy.random as ra
+import scipy.linalg as sla
+import numpy.linalg as la
+import pdb
 
 
 def ForecastBandit(bandit_class):
@@ -20,7 +24,7 @@ def ForecastBandit(bandit_class):
                 return self.hazard_bandit.pull(arm), True
 
         def get_next_p(self):
-            return np.random.rand() * 0.3
+            return np.random.rand()
 
         def get_means(self, p):
             return (1 - p) * self.normal_bandit.means + p * self.hazard_bandit.means
@@ -51,6 +55,15 @@ def FBFixedPSequence(bandit_class, p_sequence=None):
     return FBFixedSequence
 
 
+def FBWithSubPullOutput(alg_class):
+    class FBWithSubPullOutput(alg_class):
+        def _compute_regret(self, arm, p):
+            means = self.bandit.get_means(p)
+            return means.max() - means[arm] > 0
+
+    return FBWithSubPullOutput
+
+
 # Parent class for bandit algorithms with forecasts
 class ForecastBanditAlgorithm(BanditAlgorithm):
     name = "ForecastBanditAlgorithm"
@@ -63,7 +76,7 @@ class ForecastBanditAlgorithm(BanditAlgorithm):
         self.smallest_gap = []
         self.estimation_error = []
 
-    def _update(self, arm, reward, event):
+    def _update(self, arm, reward, event, p):
         super()._update(arm, reward)
         if not event:
             self.normal_pull_count[arm] += 1
@@ -80,7 +93,7 @@ class ForecastBanditAlgorithm(BanditAlgorithm):
             self.regrets.append(self._compute_regret(arm, current_p))
             self.smallest_gap.append(self.bandit.get_smallest_gap(current_p))
             reward, event = self.bandit.pull(arm)
-            self._update(arm, reward, event)
+            self._update(arm, reward, event, current_p)
         return self.regrets
 
     def select(self, p):
@@ -88,7 +101,7 @@ class ForecastBanditAlgorithm(BanditAlgorithm):
 
     def _compute_regret(self, arm, p):
         means = self.bandit.get_means(p)
-        return means.max() - means[arm] > 0
+        return means.max() - means[arm]
 
     def _compute_empirical_means(self, p):
         return (1 - p) * self.total_rewards_normal / np.maximum(
@@ -181,8 +194,8 @@ class ForecastBernoulliThompsonSampling(ForecastBanditAlgorithm):
         self.alpha_hazard = np.ones(self.nb_arm)
         self.beta_hazard = np.ones(self.nb_arm)
 
-    def _update(self, arm, reward, event):
-        super()._update(arm, reward, event)
+    def _update(self, arm, reward, event, p):
+        super()._update(arm, reward, event, p)
         if event:
             if reward == 1.0:
                 self.alpha_hazard[arm] += 1
@@ -198,6 +211,103 @@ class ForecastBernoulliThompsonSampling(ForecastBanditAlgorithm):
         normal_samples = np.random.beta(self.alpha_hazard, self.beta_hazard)
         hazard_samples = np.random.beta(self.alpha_normal, self.beta_normal)
         return np.argmax((1 - p) * normal_samples + p * hazard_samples)
+
+
+class ForecastUCB1Approx(ForecastUCB1):
+    name = "ForecastUCB1"
+
+    def __init__(self, bandit):
+        super().__init__(bandit)
+        self.event_count = 0
+
+    def select(self, p):
+        p_estimated = self.event_count / (self.t + 1)
+        return super().select(p_estimated)
+
+    def _update(self, arm, reward, event, p):
+        super()._update(arm, reward, event, p)
+        if event:
+            self.event_count += 1
+
+
+class OptimalAgent(ForecastBanditAlgorithm):
+    name = "Optimal"
+
+    def __init__(self, bandit):
+        super().__init__(bandit)
+
+    def select(self, p):
+        return np.argmax(self.bandit.get_means(p)), self.bandit.get_means(p)
+
+
+class OFUL(ForecastBanditAlgorithm):
+    # Adapted from https://github.com/zackbh/bandit_algorithms
+    name = "OFUL"
+
+    ridge = 0.1
+    delta = 0.1
+    S_hat = 1
+    R = 1
+    my_c = 1  # "agressiveness"
+
+    def __init__(self, bandit):
+        super().__init__(bandit)
+        self.d = self.nb_arm * 2
+
+        self.XTy = np.zeros(self.d)
+        self.invVt = np.eye(self.d) / self.ridge
+        self.logdetV = self.d * np.log(self.ridge)
+        self.sqrt_beta = self._calc_sqrt_beta_det2()
+        self.theta_hat = np.zeros(self.d)
+        self.Vt = self.ridge * np.eye(self.d)
+
+    def select(self, p):
+        x = np.array([self._make_context(arm, p) for arm in range(self.nb_arm)])
+        X_invVt_norm_sq = np.sum(np.dot(x, self.invVt) * x, 1)
+        obj_func = np.dot(x, self.theta_hat) + self.my_c * self.sqrt_beta * np.sqrt(
+            X_invVt_norm_sq
+        )
+        pulled_idx = np.argmax(obj_func)
+
+        return pulled_idx, np.dot(x, self.theta_hat)
+
+    def _update(self, arm, reward, event, p):
+        super()._update(arm, reward, event, p)
+
+        xt = self._make_context(arm, p)
+        self.XTy += reward * xt
+        self.Vt += np.outer(xt, xt)
+
+        tempval1 = np.dot(self.invVt, xt)
+        tempval2 = np.dot(tempval1, xt)
+        self.logdetV += np.log(1 + tempval2)
+
+        if self.t % 20 == 0:
+            self.invVt = la.inv(self.Vt)
+        else:
+            self.invVt -= np.outer(tempval1, tempval1) / (1 + tempval2)
+
+        self.theta_hat = np.dot(self.invVt, self.XTy)
+        self.sqrt_beta = self._calc_sqrt_beta_det2()
+
+    def _calc_sqrt_beta_det2(self):
+        return (
+            self.R
+            * np.sqrt(
+                self.logdetV
+                - self.d * np.log(self.ridge)
+                + np.log(1 / (self.delta**2))
+            )
+            + np.sqrt(self.ridge) * self.S_hat
+        )
+
+    def _make_context(self, arm, p):
+        return np.array(
+            [
+                p if i == 2 * arm else 1 - p if i == 2 * arm + 1 else 0
+                for i in range(self.d)
+            ]
+        )
 
 
 class ForecastBanditExperiment(Experiment):
@@ -245,31 +355,3 @@ class ForecastBanditExperiment(Experiment):
         plt.xlabel("Time")
         plt.ylabel("Estimation error")
         plt.show()
-
-
-# UCB1 algorithm with forecasts
-class ForecastUCB1Approx(ForecastUCB1):
-    name = "ForecastUCB1"
-
-    def __init__(self, bandit):
-        super().__init__(bandit)
-        self.event_count = 0
-
-    def select(self, p):
-        p_estimated = self.event_count / (self.t + 1)
-        return super().select(p_estimated)
-
-    def _update(self, arm, reward, event):
-        super()._update(arm, reward, event)
-        if event:
-            self.event_count += 1
-
-
-class OptimalAgent(ForecastBanditAlgorithm):
-    name = "Optimal"
-
-    def __init__(self, bandit):
-        super().__init__(bandit)
-
-    def select(self, p):
-        return np.argmax(self.bandit.get_means(p)), self.bandit.get_means(p)

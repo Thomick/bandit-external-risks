@@ -219,7 +219,13 @@ class Experiment:
         return regrets
 
     def run_and_plot(
-        self, bandit_class, bandit_args, T, nb_simu, plot_instant_regret=False
+        self,
+        bandit_class,
+        bandit_args,
+        T,
+        nb_simu,
+        plot_instant_regret=False,
+        show=True,
     ):
         regrets = self.run(bandit_class, bandit_args, T, nb_simu)
         for regrets_algo, (algorithm_class, algorithm_args, name) in zip(
@@ -243,7 +249,8 @@ class Experiment:
             plt.xlabel("Time")
             plt.ylabel("Regret")
 
-        plt.show()
+        if show:
+            plt.show()
 
     def add_cumulative_plot(self, regrets, T, name=None):
         cumregret = np.cumsum(regrets, axis=1)
